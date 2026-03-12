@@ -1,6 +1,6 @@
 # 📈 QuantStream: C++ Algorithmic Backtesting Engine
 
-**Live Deployments:** 🚀https://quantstream-algorithmic-trading-backtester-production.up.railway.app/| ☁️https://quantstream-algorithmic-trading-2sby.onrender.com/
+**Live Deployments:** https://quantstream-algorithmic-trading-2sby.onrender.com/
 
 QuantStream is a high-performance, lightweight backtesting engine designed for quantitative trading strategies. Built with a robust **C++ backend** and a modern, responsive **Web UI**, it processes historical market data to simulate complex trading algorithms and provides deep statistical insights like market memory (Hurst Exponent) and optimal position sizing (Kelly Criterion).
 
