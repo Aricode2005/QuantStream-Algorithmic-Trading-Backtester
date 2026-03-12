@@ -335,76 +335,97 @@ int main() {
         response.set_content(fileBuffer.str(), "text/html; charset=utf-8");
     });
 
-    backtestServer.Post("/api/run_backtest", [&](const httplib::Request& request, httplib::Response& response) {
-        auto requestJson = json::parse(request.body);
-        double riskMultiplier = requestJson.value("risk_pct", 0.10); // Extract slider value
-        
-        double startingCash = requestJson["start_cash"];
-        string selectedStrategy = requestJson.value("strat_type", "SMA"); 
-        
-        Portfolio activePortfolio(startingCash);
-        unique_ptr<Strategy> tradingStrategy;
-
-        if (selectedStrategy == "BBAND") {
-            tradingStrategy = make_unique<BollingerBands>(requestJson.value("fast_sma", 20), 2.0);
-        } else if (selectedStrategy == "RSI") {
-            tradingStrategy = make_unique<RSIMomentum>(requestJson.value("fast_sma", 14));
-        } else if (selectedStrategy == "ZSCORE") {
-            tradingStrategy = make_unique<ZScoreArbitrage>(requestJson.value("fast_sma", 20), 2.0);
-        } else if (selectedStrategy == "KALMAN") {
-            tradingStrategy = make_unique<KalmanFilterStrategy>();
-        } else {
-            tradingStrategy = make_unique<SMACrossover>(requestJson.value("fast_sma", 10), requestJson.value("slow_sma", 50));
-        }
-        
-        json responseJson;
-        responseJson["equity_curve"] = json::array();
-        responseJson["trades"] = json::array();
-        
-        vector<double> historicalPrices;
-        int totalExecutedTrades = 0;
-
-        for (auto& dataPoint : requestJson["market_data"]) {
-            Tick currentTick = {dataPoint["date"], dataPoint["price"]};
-            historicalPrices.push_back(currentTick.price);
+   backtestServer.Post("/api/run_backtest", [&](const httplib::Request& request, httplib::Response& response) {
+        try {
+            auto requestJson = json::parse(request.body);
             
-            string tradeAction = tradingStrategy->evaluateTrade(currentTick, activePortfolio, riskMultiplier);
+            double riskMultiplier = requestJson.value("risk_pct", 0.10);
+            double startingCash = requestJson["start_cash"];
+            string selectedStrategy = requestJson.value("strat_type", "SMA"); 
             
-            if (tradeAction != "HOLD") {
-                responseJson["trades"].push_back({
-                    {"date", currentTick.timestamp}, 
-                    {"action", tradeAction}, 
-                    {"price", currentTick.price}
-                });
-                totalExecutedTrades++;
+            Portfolio activePortfolio(startingCash);
+            unique_ptr<Strategy> tradingStrategy;
+
+            if (selectedStrategy == "BBAND") {
+                tradingStrategy = make_unique<BollingerBands>(requestJson.value("fast_sma", 20), 2.0);
+            } else if (selectedStrategy == "RSI") {
+                tradingStrategy = make_unique<RSIMomentum>(requestJson.value("fast_sma", 14));
+            } else if (selectedStrategy == "ZSCORE") {
+                tradingStrategy = make_unique<ZScoreArbitrage>(requestJson.value("fast_sma", 20), 2.0);
+            } else if (selectedStrategy == "KALMAN") {
+                tradingStrategy = make_unique<KalmanFilterStrategy>();
+            } else {
+                tradingStrategy = make_unique<SMACrossover>(requestJson.value("fast_sma", 10), requestJson.value("slow_sma", 50));
             }
             
-            responseJson["equity_curve"].push_back({
-                {"date", currentTick.timestamp}, 
-                {"val", activePortfolio.getTotalPortfolioValue(currentTick.price)}, 
-                {"price", currentTick.price}
-            });
-        }
-
-        double hurstExponent = calculateHurstExponent(historicalPrices);
-        double optimalKellyFraction = 0.0;
-        int totalClosedTrades = activePortfolio.winningTrades + activePortfolio.losingTrades;
-        
-        if (totalClosedTrades > 0) {
-            double winRateProbability = (double)activePortfolio.winningTrades / totalClosedTrades;
-            double averageWin = activePortfolio.winningTrades > 0 ? activePortfolio.sumWinningPnL / activePortfolio.winningTrades : 0;
-            double averageLoss = activePortfolio.losingTrades > 0 ? activePortfolio.sumLosingPnL / activePortfolio.losingTrades : 1; 
-            double winLossRatio = (averageLoss > 0) ? (averageWin / averageLoss) : 1;
+            json responseJson;
+            responseJson["equity_curve"] = json::array();
+            responseJson["trades"] = json::array();
             
-            optimalKellyFraction = winRateProbability - ((1.0 - winRateProbability) / winLossRatio);
-        }
+            vector<double> historicalPrices;
+            int totalExecutedTrades = 0;
 
-        responseJson["final_value"] = activePortfolio.getTotalPortfolioValue(historicalPrices.back());
-        responseJson["total_trades"] = totalExecutedTrades;
-        responseJson["hurst_exponent"] = hurstExponent;
-        responseJson["kelly_fraction"] = optimalKellyFraction;
-        
-        response.set_content(responseJson.dump(), "application/json");
+            // 2. Process the data
+            for (auto& dataPoint : requestJson["market_data"]) {
+                Tick currentTick = {dataPoint["date"], dataPoint["price"]};
+                historicalPrices.push_back(currentTick.price);
+                
+                string tradeAction = tradingStrategy->evaluateTrade(currentTick, activePortfolio, riskMultiplier);
+                
+                if (tradeAction != "HOLD") {
+                    responseJson["trades"].push_back({
+                        {"date", currentTick.timestamp}, 
+                        {"action", tradeAction}, 
+                        {"price", currentTick.price}
+                    });
+                    totalExecutedTrades++;
+                }
+                
+                responseJson["equity_curve"].push_back({
+                    {"date", currentTick.timestamp}, 
+                    {"val", activePortfolio.getTotalPortfolioValue(currentTick.price)}, 
+                    {"price", currentTick.price}
+                });
+            }
+
+            // Prevent division by zero if CSV was empty
+            if (historicalPrices.empty()) {
+                throw std::runtime_error("Market data array is empty.");
+            }
+
+            double hurstExponent = calculateHurstExponent(historicalPrices);
+            double optimalKellyFraction = 0.0;
+            int totalClosedTrades = activePortfolio.winningTrades + activePortfolio.losingTrades;
+            
+            if (totalClosedTrades > 0) {
+                double winRateProbability = (double)activePortfolio.winningTrades / totalClosedTrades;
+                double averageWin = activePortfolio.winningTrades > 0 ? activePortfolio.sumWinningPnL / activePortfolio.winningTrades : 0;
+                double averageLoss = activePortfolio.losingTrades > 0 ? activePortfolio.sumLosingPnL / activePortfolio.losingTrades : 1; 
+                double winLossRatio = (averageLoss > 0) ? (averageWin / averageLoss) : 1;
+                
+                optimalKellyFraction = winRateProbability - ((1.0 - winRateProbability) / winLossRatio);
+            }
+
+            responseJson["final_value"] = activePortfolio.getTotalPortfolioValue(historicalPrices.back());
+            responseJson["total_trades"] = totalExecutedTrades;
+            responseJson["hurst_exponent"] = hurstExponent;
+            responseJson["kelly_fraction"] = optimalKellyFraction;
+            
+            response.set_content(responseJson.dump(), "application/json");
+
+        } catch (const json::exception& e) {
+            std::cerr << "JSON Error: " << e.what() << std::endl;
+            response.status = 400; // Bad Request
+            response.set_content(std::string("JSON Error: ") + e.what(), "text/plain");
+        } catch (const std::exception& e) {
+            std::cerr << "Server Error: " << e.what() << std::endl;
+            response.status = 500; // Internal Server Error
+            response.set_content(std::string("Server Error: ") + e.what(), "text/plain");
+        } catch (...) {
+            std::cerr << "Unknown Fatal Error" << std::endl;
+            response.status = 500;
+            response.set_content("Unknown Error occurred during backtest", "text/plain");
+        }
     });
 
     const char* port_env = std::getenv("PORT");
