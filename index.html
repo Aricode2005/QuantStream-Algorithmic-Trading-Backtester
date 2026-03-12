@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quant Strategy Backtester</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.3/jspdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.6/jspdf.autotable.min.js"></script>
+    
+    <style>
+        :root { --bg: #0b0e14; --panel: #151924; --text: #d1d4dc; --acc: #2962ff; --up: #089981; --down: #f23645; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
+        h1 { text-align: center; color: #fff; font-weight: 300; letter-spacing: 1px; }
+        
+        .layout { display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; }
+        .sidebar { width: 320px; display: flex; flex-direction: column; gap: 15px; }
+        .main-content { flex: 1; display: flex; flex-direction: column; gap: 20px; }
+        
+        .card { background: var(--panel); padding: 20px; border-radius: 8px; border: 1px solid #2a2e39; }
+        .card h3 { margin-top: 0; color: #fff; border-bottom: 1px solid #2a2e39; padding-bottom: 10px; font-size: 16px; }
+        
+        label { display: block; font-size: 12px; color: #8a93a6; margin-bottom: 5px; margin-top: 15px; }
+        input[type="number"], input[type="file"], select { width: 100%; padding: 10px; background: #2a2e39; border: 1px solid #363c4e; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--acc); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.2s; }
+        button:hover { background: #1e4bd8; }
+        
+        .metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; }
+        .metric-box { background: #2a2e39; padding: 15px; border-radius: 6px; text-align: center; }
+        .metric-val { font-size: 20px; font-weight: bold; margin-top: 5px; color: #fff; }
+        
+        .trade-log { height: 200px; overflow-y: auto; font-family: monospace; font-size: 13px; }
+        .log-entry { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2a2e39; }
+        .log-BUY { color: var(--up); }
+        .log-SELL { color: var(--down); }
+    </style>
+</head>
+<body>
+
+    <h1 class="text-3xl font-bold font-mono tracking-tighter">
+    Algorithmic Backtester
+</h1>
+
+    <div class="layout">
+        <div class="sidebar">
+            <div class="card">
+                <h3>⚙️ Strategy Parameters</h3>
+                
+                <label>Algorithm Type</label>
+                <select id="stratType">
+                    <option value="SMA">SMA Crossover (Trend)</option>
+                    <option value="BBAND">Bollinger Bands (Mean Reversion)</option>
+                    <option value="RSI">Relative Strength Index (Momentum)</option>
+                    <option value="ZSCORE">Z-Score Arbitrage (Statistical)</option>
+                    <option value="KALMAN">Kalman Filter (Noise Reduction)</option>
+                </select>
+
+                <label>Starting Capital ($)</label>
+                <input type="number" id="startCash" value="100000">
+                <div style="margin-top: 15px;">
+    <label style="display: flex; justify-content: space-between;">
+        Risk Per Trade 
+        <span id="riskDisp" style="color: var(--acc); font-weight: bold;">10%</span>
+    </label>
+    <input type="range" id="riskPct" min="1" max="100" value="10" 
+           style="width: 100%; accent-color: var(--acc);"
+           oninput="document.getElementById('riskDisp').innerText = this.value + '%'">
+</div>
+                
+                <label id="lblFastSma">Fast SMA Window (Days)</label>
+                <input type="number" id="fastSma" value="10">
+                
+                <div id="slowSmaContainer">
+                    <label>Slow SMA Window (Days)</label>
+                    <input type="number" id="slowSma" value="50">
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📂 Load Market Data</h3>
+                <label>Upload CSV (Format: Date,Price)</label>
+                <input type="file" id="csvFile" accept=".csv">
+                <button onclick="runBacktest()" id="runBtn">▶ Run Simulation</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="metrics-grid">
+                <div class="metric-box">
+                    <div style="font-size:12px; color:#8a93a6">Final Portfolio Value</div>
+                    <div class="metric-val" id="valFinal">---</div>
+                </div>
+                <div class="metric-box">
+                    <div style="font-size:12px; color:#8a93a6">Total Return</div>
+                    <div class="metric-val" id="valReturn">---</div>
+                </div>
+                <div class="metric-box">
+                    <div style="font-size:12px; color:#8a93a6">Total Trades</div>
+                    <div class="metric-val" id="valTrades">---</div>
+                </div>
+                <div class="metric-box">
+                    <div style="font-size:12px; color:#8a93a6">Hurst Exponent</div>
+                    <div class="metric-val" id="valHurst">---</div>
+                </div>
+                <div class="metric-box">
+                    <div style="font-size:12px; color:#8a93a6">Kelly Fraction</div>
+                    <div class="metric-val" id="valKelly">---</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📈 Portfolio value Curve vs Asset Price</h3>
+                <canvas id="mainChart" height="100"></canvas>
+            </div>
+
+            <div class="card">
+                <h3>📜 Execution Log</h3>
+                <div class="trade-log" id="tradeLog">
+                    <div style="color: #8a93a6; text-align: center; margin-top: 20px;">Upload data and run simulation to see trades.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chartInstance = null;
+        let parsedData = [];
+
+        // DYNAMIC UI TOGGLE
+        document.getElementById('stratType').addEventListener('change', function(e) {
+            const type = e.target.value;
+            const fastLbl = document.getElementById('lblFastSma');
+            const slowContainer = document.getElementById('slowSmaContainer');
+            
+            if (type === 'BBAND') {
+                fastLbl.innerText = 'Bollinger Window (Days)';
+                document.getElementById('fastSma').value = 20; 
+                slowContainer.style.display = 'none';
+            } else if (type === 'RSI') {
+                fastLbl.innerText = 'RSI Window (Days)';
+                document.getElementById('fastSma').value = 14; 
+                slowContainer.style.display = 'none';
+            } else if (type === 'ZSCORE') {
+                fastLbl.innerText = 'Z-Score Window (Days)';
+                document.getElementById('fastSma').value = 20; 
+                slowContainer.style.display = 'none';
+            } else if (type === 'KALMAN') {
+                fastLbl.innerText = 'Process Noise Base (Default 20)';
+                document.getElementById('fastSma').value = 20; 
+                slowContainer.style.display = 'none';
+            } else {
+                fastLbl.innerText = 'Fast SMA Window (Days)';
+                document.getElementById('fastSma').value = 10;
+                slowContainer.style.display = 'block';
+            }
+        });
+
+       const autoInputs = ['stratType', 'fastSma', 'slowSma', 'startCash', 'riskPct'];
+        autoInputs.forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                if (parsedData.length > 0) runBacktest();
+            });
+        });
+
+      
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            
+            reader.onload = function(event) {
+                const lines = event.target.result.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                if (lines.length < 2) return alert("CSV is empty or invalid.");
+
+                const headers = lines[0].toLowerCase().split(',');
+                
+                let dateIdx = headers.findIndex(h => h === 'date' || h === 'timestamp');
+                
+                let priceIdx = headers.findIndex(h => h === 'close' || h === 'price' || h === 'vwap');
+
+                if (dateIdx === -1 || priceIdx === -1) {
+                    return alert(`Could not find exact 'Date' and 'Close' columns. Found: ${headers.join(', ')}`);
+                }
+
+                parsedData = [];
+                for (let i = 1; i < lines.length; i++) {
+                    let rowStr = lines[i].replace(/"/g, ''); 
+                    const cols = rowStr.split(',');
+                    
+                    if (cols.length > priceIdx) {
+                        // Strip commas from numbers like 1,234.56
+                        let cleanPrice = cols[priceIdx].replace(/,/g, '').trim();
+                        const val = parseFloat(cleanPrice);
+                        if (!isNaN(val) && val > 0) {
+                            parsedData.push({ date: cols[dateIdx].trim(), price: val });
+                        }
+                    }
+                }
+                
+                // Sort chronologically (Oldest to Newest)
+                parsedData.sort((a, b) => new Date(a.date) - new Date(b.date));
+                
+                runBacktest();
+            };
+            reader.readAsText(file);
+        });
+        // RUN BACKTEST WITH LOADING STATE
+        async function runBacktest() {
+            if (parsedData.length === 0) return;
+
+            const runBtn = document.getElementById('runBtn');
+            const originalText = runBtn.innerText;
+            const originalBg = runBtn.style.background;
+            
+            runBtn.innerText = "⏳ CRUNCHING DATA...";
+            runBtn.style.background = "#ff9800";
+
+            const payload = {
+                strat_type: document.getElementById('stratType').value,
+                start_cash: parseFloat(document.getElementById('startCash').value),
+                fast_sma: parseInt(document.getElementById('fastSma').value),
+                slow_sma: parseInt(document.getElementById('slowSma').value),
+                risk_pct: parseInt(document.getElementById('riskPct').value) / 100,
+                market_data: parsedData
+            };
+
+            try {
+                const response = await fetch('/api/run_backtest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error("Server response error");
+
+                const result = await response.json();
+                updateDashboard(result, payload.start_cash);
+            } catch (error) {
+                console.error(error);
+                alert("C++ Server disconnected. Did you recompile and restart it?");
+            } finally {
+                runBtn.innerText = "▶ Run Simulation";
+                runBtn.style.background = "var(--acc)";
+            }
+        }
+
+        function updateDashboard(result, startCash) {
+            const finalVal = result.final_value;
+            const retPct = ((finalVal - startCash) / startCash) * 100;
+
+            document.getElementById('valFinal').innerText = `₹${finalVal.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+            document.getElementById('valFinal').style.color = finalVal >= startCash ? 'var(--up)' : 'var(--down)';
+            
+            document.getElementById('valReturn').innerText = `${retPct.toFixed(2)}%`;
+            document.getElementById('valReturn').style.color = retPct >= 0 ? 'var(--up)' : 'var(--down)';
+            
+            document.getElementById('valTrades').innerText = result.total_trades;
+
+            document.getElementById('valHurst').innerText = result.hurst_exponent ? result.hurst_exponent.toFixed(3) : "N/A";
+            document.getElementById('valKelly').innerText = result.kelly_fraction ? (result.kelly_fraction * 100).toFixed(2) + "%" : "N/A";
+
+            const logHtml = result.trades.map(t => {
+        const type = t.action.split(' ')[0];
+        return `<div class="log-entry">
+                    <span>${t.date}</span>
+                    <span class="log-${type}"><b>${t.action}</b> @ ₹${t.price.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                </div>`;
+    }).reverse().join('');
+            document.getElementById('tradeLog').innerHTML = logHtml || '<div style="text-align:center; padding-top:20px; color:#8a93a6">No trades triggered.</div>';
+
+            renderChart(result.equity_curve);
+        }
+
+        function renderChart(data) {
+    const ctx = document.getElementById('mainChart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => d.date),
+            datasets: [
+                { 
+                    label: 'Portfolio Value (₹)', // Updated Label
+                    data: data.map(d => d.val), 
+                    borderColor: '#2962ff', 
+                    yAxisID: 'y', 
+                    pointRadius: 0, 
+                    borderWidth: 2,
+                    fill: false 
+                },
+                { 
+                    label: 'Asset Price (Stock)', // Updated Label
+                    data: data.map(d => d.price), 
+                    borderColor: '#ff9800', 
+                    yAxisID: 'y1', 
+                    pointRadius: 0, 
+                    borderWidth: 1, 
+                    borderDash: [5, 5] 
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) label += ': ';
+                            if (context.parsed.y !== null) {
+                                // Formats as ₹1,23,456.78
+                                label += '₹' + context.parsed.y.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { display: false },
+                y: { 
+                    position: 'left', 
+                    grid: { color: '#2a2e39' },
+                    title: { display: true, text: 'Portfolio Total (₹)', color: '#8a93a6' },
+                    ticks: {
+                        callback: function(value) {
+                            return '₹' + value.toLocaleString('en-IN');
+                        }
+                    }
+                },
+                y1: { 
+                    position: 'right', 
+                    grid: { display: false },
+                    title: { display: true, text: 'Stock Price (₹)', color: '#8a93a6' },
+                    ticks: {
+                        callback: function(value) {
+                            return '₹' + value.toLocaleString('en-IN');
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+      
+    </script>
+</body>
+</html>
