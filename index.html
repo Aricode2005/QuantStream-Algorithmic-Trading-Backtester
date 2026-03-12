@@ -230,7 +230,12 @@
                     body: JSON.stringify(payload)
                 });
 
-                if (!response.ok) throw new Error("Server response error");
+              if (!response.ok) {
+            const errorText = await response.text(); 
+            alert("⚠️ C++ Engine Error:\n" + errorText);
+            console.error("Backend failed:", errorText);
+            throw new Error(errorText);
+        }
 
                 const result = await response.json();
                 updateDashboard(result, payload.start_cash);
