@@ -1,22 +1,29 @@
-# STAGE 1: Build (Force version to Bookworm)
-FROM gcc:12.2-bookworm AS builder
-WORKDIR /usr/src/app
+# STAGE 1: Build Environment
+FROM gcc:bookworm AS builder
+WORKDIR /app
 
-COPY . .
+# Copy only the 4 essential files
+COPY server.cpp .
+COPY index.html .
+COPY httplib.h .
+COPY json.hpp .
 
-# Compile for Linux
+# Compile the C++ code for Linux
 RUN g++ -O3 server.cpp -o server -lpthread
 
-# STAGE 2: Run (Use the MATCHING OS version)
+# STAGE 2: Minimal Runtime Environment
 FROM debian:bookworm-slim
 WORKDIR /app
 
-# Install runtime libraries needed for C++
+# Install the required C++ standard library
 RUN apt-get update && apt-get install -y libstdc++6 && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/src/app/server .
-COPY --from=builder /usr/src/app/index.html .
-COPY --from=builder /usr/src/app/adani_ports.csv .
+# Copy the compiled server and the HTML file from the builder stage
+COPY --from=builder /app/server .
+COPY --from=builder /app/index.html .
 
+# Expose Render's default port
 EXPOSE 10000
+
+# Start the server
 CMD ["./server"]
