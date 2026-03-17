@@ -2,15 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Quant Strategy Backtester</title>
+    <title>Quant Strategy Engine</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.3/jspdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.6/jspdf.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.3/jspdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.6/jspdf.autotable.min.js"></script>
     
     <style>
         :root { --bg: #0b0e14; --panel: #151924; --text: #d1d4dc; --acc: #2962ff; --up: #089981; --down: #f23645; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
-        h1 { text-align: center; color: #fff; font-weight: 300; letter-spacing: 1px; }
         
         .layout { display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; }
         .sidebar { width: 320px; display: flex; flex-direction: column; gap: 15px; }
@@ -32,13 +31,20 @@
         .log-entry { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2a2e39; }
         .log-BUY { color: var(--up); }
         .log-SELL { color: var(--down); }
+
+        .insight-box { padding: 12px; border-radius: 4px; margin-bottom: 10px; font-size: 14px; line-height: 1.5; }
+        .insight-hurst { background: rgba(41, 98, 255, 0.1); border-left: 4px solid var(--acc); }
+        .insight-kelly { background: rgba(8, 153, 129, 0.1); border-left: 4px solid var(--up); }
     </style>
 </head>
 <body>
 
-    <h1 class="text-3xl font-bold font-mono tracking-tighter">
-    Algorithmic Backtester
-</h1>
+    <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="margin-bottom: 5px; color: #fff; font-weight: 600; letter-spacing: 1.5px; margin-top: 0;">
+            ALGORITHMIC STRATEGY ENGINE
+        </h1>
+       
+    </div>
 
     <div class="layout">
         <div class="sidebar">
@@ -48,36 +54,37 @@
                 <label>Algorithm Type</label>
                 <select id="stratType">
                     <option value="SMA">SMA Crossover (Trend)</option>
+                    <option value="EMA">EMA Crossover (Fast Trend)</option>
                     <option value="BBAND">Bollinger Bands (Mean Reversion)</option>
                     <option value="RSI">Relative Strength Index (Momentum)</option>
                     <option value="ZSCORE">Z-Score Arbitrage (Statistical)</option>
                     <option value="KALMAN">Kalman Filter (Noise Reduction)</option>
                 </select>
 
-                <label>Starting Capital ($)</label>
+                <label>Starting Capital</label>
                 <input type="number" id="startCash" value="100000">
                 <div style="margin-top: 15px;">
-    <label style="display: flex; justify-content: space-between;">
-        Risk Per Trade 
-        <span id="riskDisp" style="color: var(--acc); font-weight: bold;">10%</span>
-    </label>
-    <input type="range" id="riskPct" min="1" max="100" value="10" 
-           style="width: 100%; accent-color: var(--acc);"
-           oninput="document.getElementById('riskDisp').innerText = this.value + '%'">
-</div>
+                    <label style="display: flex; justify-content: space-between;">
+                        Risk Per Trade 
+                        <span id="riskDisp" style="color: var(--acc); font-weight: bold;">10%</span>
+                    </label>
+                    <input type="range" id="riskPct" min="1" max="100" value="10" 
+                           style="width: 100%; accent-color: var(--acc);"
+                           oninput="document.getElementById('riskDisp').innerText = this.value + '%'">
+                </div>
                 
-                <label id="lblFastSma">Fast SMA Window (Days)</label>
+                <label id="lblFastSma">Fast Window (Days)</label>
                 <input type="number" id="fastSma" value="10">
                 
                 <div id="slowSmaContainer">
-                    <label>Slow SMA Window (Days)</label>
+                    <label id="lblSlowSma">Slow Window (Days)</label>
                     <input type="number" id="slowSma" value="50">
                 </div>
             </div>
 
             <div class="card">
                 <h3>📂 Load Market Data</h3>
-                <label>Upload CSV (Format: Date,Price)</label>
+                <label>Upload CSV (Date, Open, High, Low, Close)</label>
                 <input type="file" id="csvFile" accept=".csv">
                 <button onclick="runBacktest()" id="runBtn">▶ Run Simulation</button>
             </div>
@@ -107,8 +114,18 @@
                 </div>
             </div>
 
+            <div class="card" id="insightsCard" style="display: none;">
+                <h3>🤖 Quantitative Insights</h3>
+                <div class="insight-box insight-hurst">
+                    <strong style="color: #fff;">Regime Analysis:</strong> <span id="msgHurst" style="color: #8a93a6;">---</span>
+                </div>
+                <div class="insight-box insight-kelly">
+                    <strong style="color: #fff;">Risk Management:</strong> <span id="msgKelly" style="color: #8a93a6;">---</span>
+                </div>
+            </div>
+
             <div class="card">
-                <h3>📈 Portfolio value Curve vs Asset Price</h3>
+                <h3>📈 Portfolio Value Curve vs Asset Price</h3>
                 <canvas id="mainChart" height="100"></canvas>
             </div>
 
@@ -124,8 +141,8 @@
     <script>
         let chartInstance = null;
         let parsedData = [];
+        let currencySymbol = '₹';
 
-        // DYNAMIC UI TOGGLE
         document.getElementById('stratType').addEventListener('change', function(e) {
             const type = e.target.value;
             const fastLbl = document.getElementById('lblFastSma');
@@ -148,20 +165,20 @@
                 document.getElementById('fastSma').value = 20; 
                 slowContainer.style.display = 'none';
             } else {
-                fastLbl.innerText = 'Fast SMA Window (Days)';
+                fastLbl.innerText = `Fast ${type} Window (Days)`;
+                document.getElementById('lblSlowSma').innerText = `Slow ${type} Window (Days)`;
                 document.getElementById('fastSma').value = 10;
                 slowContainer.style.display = 'block';
             }
         });
 
-       const autoInputs = ['stratType', 'fastSma', 'slowSma', 'startCash', 'riskPct'];
+        const autoInputs = ['stratType', 'fastSma', 'slowSma', 'startCash', 'riskPct'];
         autoInputs.forEach(id => {
             document.getElementById(id).addEventListener('change', () => {
                 if (parsedData.length > 0) runBacktest();
             });
         });
 
-      
         document.getElementById('csvFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -171,46 +188,85 @@
                 const lines = event.target.result.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 if (lines.length < 2) return alert("CSV is empty or invalid.");
 
-                const headers = lines[0].toLowerCase().split(',');
+                const splitRegex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
+                const headers = lines[0].toLowerCase().split(splitRegex).map(h => h.replace(/"/g, '').trim());
                 
-                let dateIdx = headers.findIndex(h => h === 'date' || h === 'timestamp');
-                
-                let priceIdx = headers.findIndex(h => h === 'close' || h === 'price' || h === 'vwap');
+                const dateRegex = /(date|time|timestamp|day|period)/i;
+                const closeRegex = /(close|price|vwap|last|settle|adj)/i;
+                const openRegex = /^open$/i;
+                const highRegex = /^high$/i;
+                const lowRegex = /^low$/i;
 
-                if (dateIdx === -1 || priceIdx === -1) {
-                    return alert(`Could not find exact 'Date' and 'Close' columns. Found: ${headers.join(', ')}`);
+                let dateIdx = headers.findIndex(h => dateRegex.test(h));
+                let closeIdx = headers.findIndex(h => closeRegex.test(h));
+                let openIdx = headers.findIndex(h => openRegex.test(h));
+                let highIdx = headers.findIndex(h => highRegex.test(h));
+                let lowIdx = headers.findIndex(h => lowRegex.test(h));
+
+                if (dateIdx === -1 || closeIdx === -1) {
+                    return alert(`Header mismatch. Found: ${headers.join(', ')}\nNeed at least a Date/Time and a Price/Close column.`);
                 }
 
                 parsedData = [];
+                currencySymbol = '₹'; 
+                let symbolDetected = false;
+
                 for (let i = 1; i < lines.length; i++) {
-                    let rowStr = lines[i].replace(/"/g, ''); 
-                    const cols = rowStr.split(',');
+                    const cols = lines[i].split(splitRegex);
                     
-                    if (cols.length > priceIdx) {
-                        // Strip commas from numbers like 1,234.56
-                        let cleanPrice = cols[priceIdx].replace(/,/g, '').trim();
-                        const val = parseFloat(cleanPrice);
-                        if (!isNaN(val) && val > 0) {
-                            parsedData.push({ date: cols[dateIdx].trim(), price: val });
+                    if (cols.length > Math.max(dateIdx, closeIdx)) {
+                        let rawDate = cols[dateIdx].replace(/"/g, '').trim();
+                        let rawClose = cols[closeIdx];
+
+                        if (!symbolDetected && rawClose) {
+                            const match = rawClose.match(/[\$€£¥]/);
+                            if (match) currencySymbol = match[0];
+                            symbolDetected = true;
+                        }
+
+                        let cleanClose = rawClose.replace(/[^0-9.-]+/g, ""); 
+                        const closeVal = parseFloat(cleanClose);
+                        
+                        if (rawDate && !isNaN(closeVal) && closeVal > 0) {
+                            let openVal = closeVal;
+                            let highVal = closeVal;
+                            let lowVal = closeVal;
+
+                            if (openIdx !== -1 && cols.length > openIdx && cols[openIdx]) {
+                                let o = parseFloat(cols[openIdx].replace(/[^0-9.-]+/g, ""));
+                                if (!isNaN(o)) openVal = o;
+                            }
+                            if (highIdx !== -1 && cols.length > highIdx && cols[highIdx]) {
+                                let h = parseFloat(cols[highIdx].replace(/[^0-9.-]+/g, ""));
+                                if (!isNaN(h)) highVal = h;
+                            }
+                            if (lowIdx !== -1 && cols.length > lowIdx && cols[lowIdx]) {
+                                let l = parseFloat(cols[lowIdx].replace(/[^0-9.-]+/g, ""));
+                                if (!isNaN(l)) lowVal = l;
+                            }
+
+                            parsedData.push({ 
+                                date: rawDate, 
+                                price: closeVal, 
+                                close: closeVal,
+                                open: openVal,
+                                high: highVal,
+                                low: lowVal
+                            });
                         }
                     }
                 }
                 
-                // Sort chronologically (Oldest to Newest)
                 parsedData.sort((a, b) => new Date(a.date) - new Date(b.date));
-                
                 runBacktest();
             };
             reader.readAsText(file);
         });
-        // RUN BACKTEST WITH LOADING STATE
+
         async function runBacktest() {
             if (parsedData.length === 0) return;
 
             const runBtn = document.getElementById('runBtn');
-            const originalText = runBtn.innerText;
-            const originalBg = runBtn.style.background;
-            
             runBtn.innerText = "⏳ CRUNCHING DATA...";
             runBtn.style.background = "#ff9800";
 
@@ -220,7 +276,7 @@
                 fast_sma: parseInt(document.getElementById('fastSma').value),
                 slow_sma: parseInt(document.getElementById('slowSma').value),
                 risk_pct: parseInt(document.getElementById('riskPct').value) / 100,
-                market_data: parsedData
+                market_data: parsedData 
             };
 
             try {
@@ -230,12 +286,11 @@
                     body: JSON.stringify(payload)
                 });
 
-              if (!response.ok) {
-            const errorText = await response.text(); 
-            alert("⚠️ C++ Engine Error:\n" + errorText);
-            console.error("Backend failed:", errorText);
-            throw new Error(errorText);
-        }
+                if (!response.ok) {
+                    const errorText = await response.text(); 
+                    alert("⚠️ C++ Engine Error:\n" + errorText);
+                    throw new Error(errorText);
+                }
 
                 const result = await response.json();
                 updateDashboard(result, payload.start_cash);
@@ -252,7 +307,7 @@
             const finalVal = result.final_value;
             const retPct = ((finalVal - startCash) / startCash) * 100;
 
-            document.getElementById('valFinal').innerText = `₹${finalVal.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+            document.getElementById('valFinal').innerText = `${currencySymbol}${finalVal.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
             document.getElementById('valFinal').style.color = finalVal >= startCash ? 'var(--up)' : 'var(--down)';
             
             document.getElementById('valReturn').innerText = `${retPct.toFixed(2)}%`;
@@ -263,92 +318,103 @@
             document.getElementById('valHurst').innerText = result.hurst_exponent ? result.hurst_exponent.toFixed(3) : "N/A";
             document.getElementById('valKelly').innerText = result.kelly_fraction ? (result.kelly_fraction * 100).toFixed(2) + "%" : "N/A";
 
+            document.getElementById('insightsCard').style.display = 'block';
+            document.getElementById('msgHurst').innerText = result.hurst_msg || "Awaiting data...";
+            document.getElementById('msgKelly').innerText = result.kelly_msg || "Awaiting data...";
+
+            const kellyBox = document.querySelector('.insight-kelly');
+            if (result.kelly_fraction && result.kelly_fraction <= 0) {
+                kellyBox.style.borderLeftColor = 'var(--down)';
+                kellyBox.style.background = 'rgba(242, 54, 69, 0.1)';
+            } else {
+                kellyBox.style.borderLeftColor = 'var(--up)';
+                kellyBox.style.background = 'rgba(8, 153, 129, 0.1)';
+            }
+
             const logHtml = result.trades.map(t => {
-        const type = t.action.split(' ')[0];
-        return `<div class="log-entry">
-                    <span>${t.date}</span>
-                    <span class="log-${type}"><b>${t.action}</b> @ ₹${t.price.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-                </div>`;
-    }).reverse().join('');
+                const type = t.action.split(' ')[0]; 
+                return `<div class="log-entry">
+                            <span>${t.date}</span>
+                            <span class="log-${type}"><b>${t.action}</b> @ ${currencySymbol}${t.price.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                        </div>`;
+            }).reverse().join('');
             document.getElementById('tradeLog').innerHTML = logHtml || '<div style="text-align:center; padding-top:20px; color:#8a93a6">No trades triggered.</div>';
 
             renderChart(result.equity_curve);
         }
 
         function renderChart(data) {
-    const ctx = document.getElementById('mainChart').getContext('2d');
-    if (chartInstance) chartInstance.destroy();
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
 
-    chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: data.map(d => d.date),
-            datasets: [
-                { 
-                    label: 'Portfolio Value (₹)', // Updated Label
-                    data: data.map(d => d.val), 
-                    borderColor: '#2962ff', 
-                    yAxisID: 'y', 
-                    pointRadius: 0, 
-                    borderWidth: 2,
-                    fill: false 
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [
+                        { 
+                            label: `Portfolio Value (${currencySymbol})`,
+                            data: data.map(d => d.val), 
+                            borderColor: '#2962ff', 
+                            yAxisID: 'y', 
+                            pointRadius: 0, 
+                            borderWidth: 2,
+                            fill: false 
+                        },
+                        { 
+                            label: `Asset Price (${currencySymbol})`,
+                            data: data.map(d => d.price), 
+                            borderColor: '#ff9800', 
+                            yAxisID: 'y1', 
+                            pointRadius: 0, 
+                            borderWidth: 1, 
+                            borderDash: [5, 5] 
+                        }
+                    ]
                 },
-                { 
-                    label: 'Asset Price (Stock)', // Updated Label
-                    data: data.map(d => d.price), 
-                    borderColor: '#ff9800', 
-                    yAxisID: 'y1', 
-                    pointRadius: 0, 
-                    borderWidth: 1, 
-                    borderDash: [5, 5] 
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            let label = context.dataset.label || '';
-                            if (label) label += ': ';
-                            if (context.parsed.y !== null) {
-                                // Formats as ₹1,23,456.78
-                                label += '₹' + context.parsed.y.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) {
+                                        label += currencySymbol + context.parsed.y.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                                    }
+                                    return label;
+                                }
                             }
-                            return label;
+                        }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: { 
+                            position: 'left', 
+                            grid: { color: '#2a2e39' },
+                            title: { display: true, text: `Portfolio Total (${currencySymbol})`, color: '#8a93a6' },
+                            ticks: {
+                                callback: function(value) {
+                                    return currencySymbol + value.toLocaleString('en-IN');
+                                }
+                            }
+                        },
+                        y1: { 
+                            position: 'right', 
+                            grid: { display: false },
+                            title: { display: true, text: `Asset Price (${currencySymbol})`, color: '#8a93a6' },
+                            ticks: {
+                                callback: function(value) {
+                                    return currencySymbol + value.toLocaleString('en-IN');
+                                }
+                            }
                         }
                     }
                 }
-            },
-            scales: {
-                x: { display: false },
-                y: { 
-                    position: 'left', 
-                    grid: { color: '#2a2e39' },
-                    title: { display: true, text: 'Portfolio Total (₹)', color: '#8a93a6' },
-                    ticks: {
-                        callback: function(value) {
-                            return '₹' + value.toLocaleString('en-IN');
-                        }
-                    }
-                },
-                y1: { 
-                    position: 'right', 
-                    grid: { display: false },
-                    title: { display: true, text: 'Stock Price (₹)', color: '#8a93a6' },
-                    ticks: {
-                        callback: function(value) {
-                            return '₹' + value.toLocaleString('en-IN');
-                        }
-                    }
-                }
-            }
+            });
         }
-    });
-}
-      
     </script>
 </body>
 </html>
