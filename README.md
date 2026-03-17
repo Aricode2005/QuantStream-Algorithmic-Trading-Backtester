@@ -1,38 +1,40 @@
 # 📈 QuantStream: C++ Algorithmic Backtesting Engine
 
-**Live Deployments:** https://quantstream-algorithmic-trading-2sby.onrender.com/
+**Live Deployment:** https://quantstream-algorithmic-trading-2sby.onrender.com/
 
-QuantStream is a high-performance, lightweight backtesting engine designed for quantitative trading strategies. Built with a robust **C++ backend** and a modern, responsive **Web UI**, it processes historical market data to simulate complex trading algorithms and provides deep statistical insights like market memory (Hurst Exponent) and optimal position sizing (Kelly Criterion).
+QuantStream is an institutional-grade, event-driven backtesting engine designed for quantitative trading strategies. Built with a robust **C++ backend** and a modern, responsive **Web UI**, it processes historical OHLC (Open, High, Low, Close) market data to simulate complex trading algorithms. The engine provides deep statistical insights, including market memory (Hurst Exponent), optimal position sizing (Kelly Criterion), and realistic intraday risk management.
 
-## ⚡ Core Features
+## ⚡ Core Architecture & Features
 
-* **High-Speed C++ Engine:** Leverages raw C++ for rapid data crunching, minimal latency during simulations, and strict memory safety.
-* **Multiple Trading Algorithms:**
-    * **SMA Crossover:** Trend-following momentum strategy.
-    * **Bollinger Bands:** Mean-reversion statistical strategy.
-    * **RSI Momentum:** Relative Strength Index oscillator.
+* **Event-Driven C++ Engine:** Processes market data chronologically tick-by-tick, preventing look-ahead bias and accurately simulating real-world execution latency.
+* **OHLC Intraday Risk Management:** Goes beyond standard "Close-only" backtesters by utilizing the intraday `Low` price to enforce a dynamic 5% Stop-Loss, ensuring survival against flash crashes and preventing mathematical survivor bias.
+* **Multiple Algorithmic Strategies:**
+    * **SMA & EMA Crossover:** Trend-following momentum strategies.
+    * **Bollinger Bands:** Mean-reversion statistical channel strategy.
+    * **RSI Momentum:** Relative Strength Index oscillator (J. Welles Wilder).
     * **Z-Score Arbitrage:** Standard deviation-based anomaly detection.
-    * **Kalman Filter:** Advanced noise reduction and price estimation.
-* **Quantitative Analytics:**
-    * **Hurst Exponent ($H$):** Determines the market regime (trending vs. mean-reverting).
-    * **Kelly Criterion ($f^*$):** Calculates the mathematically optimal fraction of capital to risk per trade based on historical win/loss ratios.
-* **Dynamic Web Dashboard:** Built with HTML5, JavaScript, and Chart.js to visualize the dual-axis **Portfolio Value (₹) vs. Asset Price** curve.
-* **Cloud-Ready:** Fully Dockerized using a unified Debian environment for seamless, zero-mismatch deployment to cloud platforms.
+    * **1D Kalman Filter:** Advanced recursive state estimation and noise reduction.
+* **Quantitative Analytics (AI Insights):**
+    * **Hurst Exponent (H):** Diagnoses the market regime (Trending, Mean-Reverting, or Random Walk) to validate strategy deployment.
+    * **Kelly Criterion (f*):** Calculates the mathematically optimal fraction of capital to risk per trade based on historical Win/Loss ratios, deploying a "Half-Kelly" safety buffer.
+* **Dynamic Web Dashboard:** * Advanced regex CSV parsing with automatic Currency Symbol detection.
+    * Interactive dual-axis **Portfolio Value vs. Asset Price** curve via Chart.js.
+    * Real-time execution log detailing specific BUY, SELL, and STOP LOSS triggers.
 
 ## 🛠️ Tech Stack
 
 * **Backend:** C++ (Standard Library), `cpp-httplib` (Multithreaded HTTP Server), `nlohmann/json` (Data Serialization)
-* **Frontend:** HTML/CSS/JS, Chart.js (Dual-axis plotting)
+* **Frontend:** HTML5, CSS3, Vanilla JavaScript, Chart.js (Dual-axis plotting)
 * **Infrastructure:** Docker, Render, Railway.app
 
 ## 🚀 Local Installation & Setup
 
 ### Prerequisites
-* A C++ compiler (`g++`)
-* Docker (Optional, for containerized running)
+* A C++11 (or higher) compatible compiler (`g++`)
+* Docker (Optional, for containerized deployment)
 
-### Windows Compilation (MinGW)
-Ensure you have MinGW-w64 installed. Open your terminal in the project directory and run:
+### Linux / macOS Compilation
+Open your terminal in the project directory and run:
 ```bash
-g++ -O3 server.cpp -o server -D_WIN32_WINNT=0x0A00 -lws2_32 -lpthread
+g++ -O3 server.cpp -o server -lpthread
 ./server
