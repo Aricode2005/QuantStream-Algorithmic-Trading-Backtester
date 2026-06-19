@@ -25,7 +25,7 @@ QuantStream is an institutional-grade, event-driven backtesting engine designed 
 
 * **Backend:** C++ (Standard Library), `cpp-httplib` (Multithreaded HTTP Server), `nlohmann/json` (Data Serialization)
 * **Frontend:** HTML5, CSS3, Vanilla JavaScript, Chart.js (Dual-axis plotting)
-* **Infrastructure:** Docker, Render, Railway.app
+* **Infrastructure:** Docker, Render
 
 ## 🚀 Local Installation & Setup
 
