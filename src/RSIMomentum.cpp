@@ -3,53 +3,24 @@
 RSIMomentum::RSIMomentum(int window)
     : lookbackWindow(window) {}
 
-std::string RSIMomentum::evaluateTrade(const Tick& currentTick, Portfolio& userPortfolio, double riskPct) {
-    if (userPortfolio.getAssetQuantity() > 0) {
-        double stopLossPrice = userPortfolio.getAverageEntryPrice() * 0.95;
-        if (currentTick.low <= stopLossPrice) {
-            int orderQty = userPortfolio.getAssetQuantity();
-            if (userPortfolio.sellAsset(stopLossPrice, orderQty)) {
-                return "SELL " + std::to_string(orderQty) + " (STOP LOSS)";
-            }
-        }
-    }
-
+// Note: uses a simple (Cutler) average of gains/losses over the window,
+// not Wilder's exponential smoothing.
+Signal RSIMomentum::generateSignal(const Tick& currentTick) {
     priceHistory.push_back(currentTick.close);
-    if (static_cast<int>(priceHistory.size()) <= lookbackWindow) {
-        return "HOLD";
-    }
+    if (static_cast<int>(priceHistory.size()) <= lookbackWindow) return Signal::Hold;
 
-    double averageGain = 0.0;
-    double averageLoss = 0.0;
-
+    double gain = 0.0, loss = 0.0;
     for (size_t i = priceHistory.size() - lookbackWindow; i < priceHistory.size(); ++i) {
-        double priceDifference = priceHistory[i] - priceHistory[i - 1];
-        if (priceDifference > 0) {
-            averageGain += priceDifference;
-        } else {
-            averageLoss -= priceDifference;
-        }
+        double diff = priceHistory[i] - priceHistory[i - 1];
+        if (diff > 0) gain += diff; else loss -= diff;
     }
+    gain /= lookbackWindow;
+    loss /= lookbackWindow;
 
-    averageGain /= lookbackWindow;
-    averageLoss /= lookbackWindow;
+    double rsi = 100.0;
+    if (loss != 0.0) rsi = 100.0 - 100.0 / (1.0 + gain / loss);
 
-    double rsiValue = 100.0;
-    if (averageLoss != 0.0) {
-        double relativeStrength = averageGain / averageLoss;
-        rsiValue = 100.0 - (100.0 / (1.0 + relativeStrength));
-    }
-
-    if (rsiValue < 30.0 && userPortfolio.getAvailableCash() >= currentTick.close) {
-        int orderQuantity = static_cast<int>((userPortfolio.getAvailableCash() * riskPct) / currentTick.close);
-        if (orderQuantity > 0 && userPortfolio.buyAsset(currentTick.close, orderQuantity)) {
-            return "BUY " + std::to_string(orderQuantity);
-        }
-    } else if (rsiValue > 70.0 && userPortfolio.getAssetQuantity() > 0) {
-        int orderQuantity = userPortfolio.getAssetQuantity();
-        if (orderQuantity > 0 && userPortfolio.sellAsset(currentTick.close, orderQuantity)) {
-            return "SELL " + std::to_string(orderQuantity);
-        }
-    }
-    return "HOLD";
+    if (rsi < 30.0) return Signal::Buy;
+    if (rsi > 70.0) return Signal::Sell;
+    return Signal::Hold;
 }

@@ -3,11 +3,13 @@
 class Portfolio {
 private:
     double availableCash;
-    double averageEntryPrice;
+    double averageEntryPrice;   // volume-weighted average cost of the open position
+    double lastFillPrice;
+    double feeRate;             // proportional fee per trade, e.g. 0.001 = 0.10%
     int assetQuantity;
 
 public:
-    Portfolio(double initialCash);
+    explicit Portfolio(double initialCash, double feeRate = 0.0);
 
     bool buyAsset(double currentPrice, int orderQuantity);
     bool sellAsset(double currentPrice, int orderQuantity);
@@ -16,4 +18,5 @@ public:
     double getAvailableCash() const;
     int getAssetQuantity() const;
     double getAverageEntryPrice() const;
+    double getLastFillPrice() const;
 };

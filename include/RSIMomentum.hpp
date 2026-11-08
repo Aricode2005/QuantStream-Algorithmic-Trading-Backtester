@@ -10,5 +10,6 @@ private:
 
 public:
     RSIMomentum(int window);
-    std::string evaluateTrade(const Tick& currentTick, Portfolio& userPortfolio, double riskPct) override;
+protected:
+    Signal generateSignal(const Tick& currentTick) override;
 };

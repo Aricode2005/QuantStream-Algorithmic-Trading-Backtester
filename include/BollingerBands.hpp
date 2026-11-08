@@ -11,5 +11,6 @@ private:
 
 public:
     BollingerBands(int window, double multiplier);
-    std::string evaluateTrade(const Tick& currentTick, Portfolio& userPortfolio, double riskPct) override;
+protected:
+    Signal generateSignal(const Tick& currentTick) override;
 };

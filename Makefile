@@ -4,6 +4,8 @@ LDFLAGS = -lpthread
 
 SRCS = server.cpp \
        src/Portfolio.cpp \
+       src/RiskManager.cpp \
+       src/Strategy.cpp \
        src/SMACrossover.cpp \
        src/EMACrossover.cpp \
        src/BollingerBands.cpp \
@@ -25,4 +27,7 @@ $(TARGET): $(OBJS)
 clean:
 	rm -f $(OBJS) $(TARGET) server.exe
 
-.PHONY: all clean
+bench:
+	g++ -O2 -std=c++17 -Iinclude -I. benchmark_tests.cpp src/*.cpp -o benchmark && ./benchmark
+
+.PHONY: all clean bench

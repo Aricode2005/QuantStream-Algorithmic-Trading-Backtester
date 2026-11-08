@@ -12,5 +12,6 @@ private:
 
 public:
     EMACrossover(int fast, int slow);
-    std::string evaluateTrade(const Tick& currentTick, Portfolio& userPortfolio, double riskPct) override;
+protected:
+    Signal generateSignal(const Tick& currentTick) override;
 };

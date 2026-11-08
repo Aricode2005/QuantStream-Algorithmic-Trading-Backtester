@@ -38,7 +38,7 @@ int main() {
             double startingCash = requestJson["start_cash"];
             std::string selectedStrategy = requestJson.value("strat_type", "SMA");
 
-            Portfolio activePortfolio(startingCash);
+            Portfolio activePortfolio(startingCash, requestJson.value("fee_pct", 0.0));
             std::unique_ptr<Strategy> tradingStrategy;
 
             if (selectedStrategy == "BBAND") {
@@ -73,9 +73,7 @@ int main() {
                 std::string tradeAction = tradingStrategy->evaluateTrade(currentTick, activePortfolio, riskMultiplier);
 
                 if (tradeAction != "HOLD") {
-                    double executedPrice = (tradeAction.find("STOP LOSS") != std::string::npos)
-                                               ? (activePortfolio.getAverageEntryPrice() * 0.95)
-                                               : currentTick.close;
+                    double executedPrice = activePortfolio.getLastFillPrice();
 
                     responseJson["trades"].push_back({
                         {"date", currentTick.timestamp},
