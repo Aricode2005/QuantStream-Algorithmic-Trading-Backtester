@@ -4,7 +4,6 @@ SMACrossover::SMACrossover(int fast, int slow)
     : fastWindow(fast), slowWindow(slow) {}
 
 std::string SMACrossover::evaluateTrade(const Tick& currentTick, Portfolio& userPortfolio, double riskPct) {
-    // INTRADAY STOP LOSS CHECK (5%)
     if (userPortfolio.getAssetQuantity() > 0) {
         double stopLossPrice = userPortfolio.getAverageEntryPrice() * 0.95;
         if (currentTick.low <= stopLossPrice) {

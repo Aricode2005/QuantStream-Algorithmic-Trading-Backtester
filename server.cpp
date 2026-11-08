@@ -58,6 +58,7 @@ int main() {
             responseJson["trades"] = json::array();
 
             std::vector<double> historicalPrices;
+            std::vector<double> equityValues;
             int totalExecutedTrades = 0;
 
             for (auto& dataPoint : requestJson["market_data"]) {
@@ -84,9 +85,12 @@ int main() {
                     totalExecutedTrades++;
                 }
 
+                double currentEquity = activePortfolio.getTotalPortfolioValue(currentTick.close);
+                equityValues.push_back(currentEquity);
+
                 responseJson["equity_curve"].push_back({
                     {"date", currentTick.timestamp},
-                    {"val", activePortfolio.getTotalPortfolioValue(currentTick.close)},
+                    {"val", currentEquity},
                     {"price", currentTick.close}
                 });
             }
@@ -97,9 +101,13 @@ int main() {
 
             double hurstExponent = calculateHurstExponent(historicalPrices);
             std::string hurstMsg = getHurstRegimeMessage(hurstExponent);
+            double sharpe = calculateSharpeRatio(equityValues, 252.0);
+            double maxDd = calculateMaxDrawdown(equityValues);
 
             responseJson["final_value"] = activePortfolio.getTotalPortfolioValue(historicalPrices.back());
             responseJson["total_trades"] = totalExecutedTrades;
+            responseJson["sharpe_ratio"] = sharpe;
+            responseJson["max_drawdown"] = maxDd;
             responseJson["hurst_exponent"] = hurstExponent;
             responseJson["hurst_msg"] = hurstMsg;
 
