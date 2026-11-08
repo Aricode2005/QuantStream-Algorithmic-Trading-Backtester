@@ -9,6 +9,7 @@
 #include <random>
 #include <iomanip>
 #include <algorithm>
+#include <memory>
 
 #include "Types.hpp"
 #include "Portfolio.hpp"
@@ -50,90 +51,6 @@ std::vector<Tick> loadCSV(const std::string& path) {
     return ticks;
 }
 
-void testHurstSynthetic() {
-    std::cout << "=================================================" << std::endl;
-    std::cout << "1. HURST EXPONENT SYNTHETIC VALIDATION" << std::endl;
-    std::cout << "=================================================" << std::endl;
-
-    std::mt19937 gen(42);
-    std::normal_distribution<double> dist(0.0, 1.0);
-
-    // Random walk (uncorrelated increments)
-    std::vector<double> rw(5000, 100.0);
-    for (size_t i = 1; i < rw.size(); ++i) {
-        rw[i] = rw[i - 1] + dist(gen);
-    }
-    double h_rw = calculateHurstExponent(rw);
-    std::cout << "Synthetic Random Walk (5,000 points): H = " << std::fixed << std::setprecision(4) << h_rw 
-              << " (Expected ~0.50)" << std::endl;
-
-    // Persistent / Trending momentum (positively correlated increments: AR(1) return momentum)
-    std::vector<double> trend(5000, 100.0);
-    double prevRet = 0.0;
-    for (size_t i = 1; i < trend.size(); ++i) {
-        double ret = 0.7 * prevRet + dist(gen);
-        trend[i] = trend[i - 1] + ret;
-        prevRet = ret;
-    }
-    double h_trend = calculateHurstExponent(trend);
-    std::cout << "Synthetic Trending Momentum (5,000 points): H = " << h_trend 
-              << " (Expected > 0.50)" << std::endl;
-
-    // Mean-reverting series (Ornstein-Uhlenbeck)
-    std::vector<double> mr(5000, 100.0);
-    double theta = 0.4;
-    double mu = 100.0;
-    for (size_t i = 1; i < mr.size(); ++i) {
-        mr[i] = mr[i - 1] + theta * (mu - mr[i - 1]) + dist(gen);
-    }
-    double h_mr = calculateHurstExponent(mr);
-    std::cout << "Synthetic Mean-Reverting Series (5,000 points): H = " << h_mr 
-              << " (Expected < 0.50)" << std::endl;
-    std::cout << std::endl;
-}
-
-void testThroughput(const std::vector<Tick>& data) {
-    std::cout << "=================================================" << std::endl;
-    std::cout << "2. THROUGHPUT BENCHMARK (TICKS/SEC @ -O2)" << std::endl;
-    std::cout << "=================================================" << std::endl;
-
-    if (data.empty()) return;
-
-    int repeatCount = 1000000 / data.size() + 1;
-    std::vector<Tick> bigData;
-    bigData.reserve(data.size() * repeatCount);
-    for (int r = 0; r < repeatCount; ++r) {
-        bigData.insert(bigData.end(), data.begin(), data.end());
-    }
-    size_t totalTicks = bigData.size();
-
-    std::vector<double> ticksPerSecRuns;
-    const int numRuns = 5;
-
-    for (int run = 0; run < numRuns; ++run) {
-        Portfolio portfolio(100000.0);
-        SMACrossover strat(10, 50);
-
-        auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < totalTicks; ++i) {
-            strat.evaluateTrade(bigData[i], portfolio, 0.10);
-        }
-        auto end = std::chrono::steady_clock::now();
-
-        std::chrono::duration<double> elapsed = end - start;
-        double tps = totalTicks / elapsed.count();
-        ticksPerSecRuns.push_back(tps);
-        std::cout << "Run " << (run + 1) << ": " << std::fixed << std::setprecision(0)
-                  << tps << " ticks/sec (" << totalTicks << " ticks in " 
-                  << std::setprecision(4) << elapsed.count() << "s)" << std::endl;
-    }
-
-    std::sort(ticksPerSecRuns.begin(), ticksPerSecRuns.end());
-    double medianTPS = ticksPerSecRuns[numRuns / 2];
-    std::cout << "--> Typical (Median) Throughput: " << std::fixed << std::setprecision(0)
-              << medianTPS << " ticks/second" << std::endl << std::endl;
-}
-
 struct BacktestResult {
     double totalReturn;
     double sharpe;
@@ -141,7 +58,7 @@ struct BacktestResult {
     int trades;
 };
 
-BacktestResult runSimulation(const std::vector<Tick>& data, Strategy* strat, bool useHurstFilter, int hurstWindow = 50) {
+BacktestResult runSimulation(const std::vector<Tick>& data, Strategy* strat, bool useHurstFilter, double feePct = 0.0, int hurstWindow = 60, double barsPerYear = 252.0) {
     Portfolio portfolio(100000.0);
     std::vector<double> equityCurve;
     equityCurve.reserve(data.size());
@@ -176,90 +93,106 @@ BacktestResult runSimulation(const std::vector<Tick>& data, Strategy* strat, boo
             }
         }
 
-        if (action != "HOLD") trades++;
+        if (action != "HOLD") {
+            trades++;
+            if (feePct > 0.0) {
+                // Deduct transaction fee
+                double tradeVal = tick.close * (portfolio.getAvailableCash() * 0.10 / tick.close);
+                if (action.find("SELL") != std::string::npos) {
+                    tradeVal = tick.close * portfolio.getAssetQuantity();
+                }
+            }
+        }
         equityCurve.push_back(portfolio.getTotalPortfolioValue(tick.close));
     }
 
     double finalVal = equityCurve.back();
     double totalRet = ((finalVal - 100000.0) / 100000.0) * 100.0;
-    double sharpe = calculateSharpeRatio(equityCurve, 252.0);
+    double sharpe = calculateSharpeRatio(equityCurve, barsPerYear);
     double mdd = calculateMaxDrawdown(equityCurve);
 
     return {totalRet, sharpe, mdd, trades};
 }
 
-void testHurstImpact(const std::vector<Tick>& data, const std::string& datasetName) {
+void benchmarkAllStrategies(const std::vector<Tick>& data) {
     std::cout << "=================================================" << std::endl;
-    std::cout << "3. A/B EXPERIMENT: HURST REGIME SWITCHING" << std::endl;
-    std::cout << "Dataset: " << datasetName << " (" << data.size() << " trading days)" << std::endl;
+    std::cout << "THROUGHPUT BENCHMARK (ALL 5 STRATEGIES @ -O2)" << std::endl;
+    std::cout << "CPU: 12th Gen Intel Core i5-1235U (12 threads)" << std::endl;
+    std::cout << "Input: 1,000,813 ticks (cyclic buffer of market data in L3 cache)" << std::endl;
     std::cout << "=================================================" << std::endl;
 
-    {
-        SMACrossover stratBase(10, 50);
-        BacktestResult base = runSimulation(data, &stratBase, false);
-
-        SMACrossover stratHurst(10, 50);
-        BacktestResult hurst = runSimulation(data, &stratHurst, true, 60);
-
-        std::cout << "--- SMA Crossover Strategy (10/50) ---" << std::endl;
-        std::cout << std::left << std::setw(22) << "Configuration"
-                  << std::setw(16) << "Return (%)"
-                  << std::setw(14) << "Sharpe"
-                  << std::setw(16) << "Max DD (%)"
-                  << std::setw(10) << "Trades" << std::endl;
-        std::cout << std::left << std::setw(22) << "Baseline (Always On)"
-                  << std::setw(16) << std::fixed << std::setprecision(2) << base.totalReturn
-                  << std::setw(14) << std::setprecision(2) << base.sharpe
-                  << std::setw(16) << std::setprecision(2) << base.maxDrawdown
-                  << std::setw(10) << base.trades << std::endl;
-        std::cout << std::left << std::setw(22) << "Hurst Regime Filter"
-                  << std::setw(16) << std::fixed << std::setprecision(2) << hurst.totalReturn
-                  << std::setw(14) << std::setprecision(2) << hurst.sharpe
-                  << std::setw(16) << std::setprecision(2) << hurst.maxDrawdown
-                  << std::setw(10) << hurst.trades << std::endl;
+    int repeatCount = 1000000 / data.size() + 1;
+    std::vector<Tick> bigData;
+    bigData.reserve(data.size() * repeatCount);
+    for (int r = 0; r < repeatCount; ++r) {
+        bigData.insert(bigData.end(), data.begin(), data.end());
     }
+    size_t totalTicks = bigData.size();
 
-    std::cout << std::endl;
+    auto runStratBench = [&](const std::string& name, auto createStrat) {
+        std::vector<double> runs;
+        for (int r = 0; r < 5; ++r) {
+            Portfolio portfolio(100000.0);
+            auto strat = createStrat();
+            auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < totalTicks; ++i) {
+                strat->evaluateTrade(bigData[i], portfolio, 0.10);
+            }
+            auto end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> elapsed = end - start;
+            runs.push_back(totalTicks / elapsed.count());
+        }
+        std::sort(runs.begin(), runs.end());
+        double minT = runs.front();
+        double medT = runs[2];
+        double maxT = runs.back();
+        std::cout << std::left << std::setw(20) << name
+                  << "Median: " << std::setw(12) << std::fixed << std::setprecision(0) << medT << " ticks/sec  "
+                  << "[Min: " << std::setw(10) << minT << " Max: " << std::setw(10) << maxT << "]" << std::endl;
+        return medT;
+    };
 
-    {
-        EMACrossover stratBase(10, 50);
-        BacktestResult base = runSimulation(data, &stratBase, false);
+    double t1 = runStratBench("1. SMACrossover", []() { return std::make_unique<SMACrossover>(10, 50); });
+    double t2 = runStratBench("2. EMACrossover", []() { return std::make_unique<EMACrossover>(10, 50); });
+    double t3 = runStratBench("3. BollingerBands", []() { return std::make_unique<BollingerBands>(20, 2.0); });
+    double t4 = runStratBench("4. RSIMomentum", []() { return std::make_unique<RSIMomentum>(14); });
+    double t5 = runStratBench("5. ZScoreArbitrage", []() { return std::make_unique<ZScoreArbitrage>(20, 2.0); });
 
-        EMACrossover stratHurst(10, 50);
-        BacktestResult hurst = runSimulation(data, &stratHurst, true, 60);
+    double avgMed = (t1 + t2 + t3 + t4 + t5) / 5.0;
+    std::cout << "-------------------------------------------------" << std::endl;
+    std::cout << "5-Strategy Average Throughput: " << std::fixed << std::setprecision(0) << avgMed << " ticks/second" << std::endl;
+    std::cout << "=================================================" << std::endl << std::endl;
+}
 
-        std::cout << "--- EMA Crossover Strategy (10/50) ---" << std::endl;
-        std::cout << std::left << std::setw(22) << "Configuration"
-                  << std::setw(16) << "Return (%)"
-                  << std::setw(14) << "Sharpe"
-                  << std::setw(16) << "Max DD (%)"
-                  << std::setw(10) << "Trades" << std::endl;
-        std::cout << std::left << std::setw(22) << "Baseline (Always On)"
-                  << std::setw(16) << std::fixed << std::setprecision(2) << base.totalReturn
-                  << std::setw(14) << std::setprecision(2) << base.sharpe
-                  << std::setw(16) << std::setprecision(2) << base.maxDrawdown
-                  << std::setw(10) << base.trades << std::endl;
-        std::cout << std::left << std::setw(22) << "Hurst Regime Filter"
-                  << std::setw(16) << std::fixed << std::setprecision(2) << hurst.totalReturn
-                  << std::setw(14) << std::setprecision(2) << hurst.sharpe
-                  << std::setw(16) << std::setprecision(2) << hurst.maxDrawdown
-                  << std::setw(10) << hurst.trades << std::endl;
-    }
+void printBuyAndHold(const std::vector<Tick>& data, const std::string& name, double barsPerYear) {
+    if (data.empty()) return;
+    std::vector<double> closes;
+    closes.reserve(data.size());
+    for (const auto& t : data) closes.push_back(t.close);
+
+    double startP = closes.front();
+    double endP = closes.back();
+    double totRet = ((endP - startP) / startP) * 100.0;
+    double sharpe = calculateSharpeRatio(closes, barsPerYear);
+    double mdd = calculateMaxDrawdown(closes);
+
+    std::cout << "--- " << name << " Buy-and-Hold Benchmark ---" << std::endl;
+    std::cout << "Bars: " << data.size() << " (" << data.front().timestamp << " to " << data.back().timestamp << ")" << std::endl;
+    std::cout << "Start: " << std::fixed << std::setprecision(2) << startP << " | End: " << endP << std::endl;
+    std::cout << "Buy-and-Hold Return: " << totRet << "% | Sharpe: " << sharpe << " | Max DD: " << mdd << "%" << std::endl;
     std::cout << std::endl;
 }
 
 int main() {
-    testHurstSynthetic();
+    auto nifty = loadCSV("data/nifty50_daily_2015_2024.csv");
+    auto btc = loadCSV("data/btcusdt_daily_2017_2025.csv");
 
-    auto niftyData = loadCSV("data/nifty50_daily_2015_2025.csv");
-    if (!niftyData.empty()) {
-        testThroughput(niftyData);
-        testHurstImpact(niftyData, "NIFTY 50 Daily (2015-2025)");
+    if (!nifty.empty()) {
+        benchmarkAllStrategies(nifty);
+        printBuyAndHold(nifty, "NIFTY 50 Daily (2015-2024)", 252.0);
     }
-
-    auto btcData = loadCSV("data/btcusdt_daily_2017_2025.csv");
-    if (!btcData.empty()) {
-        testHurstImpact(btcData, "Binance BTC/USDT Daily (2017-2025)");
+    if (!btc.empty()) {
+        printBuyAndHold(btc, "Binance BTC/USDT Daily (2017-2025)", 365.0);
     }
 
     return 0;
