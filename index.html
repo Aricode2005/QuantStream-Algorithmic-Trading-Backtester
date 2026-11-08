@@ -23,7 +23,7 @@
         button { width: 100%; padding: 12px; background: var(--acc); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.2s; }
         button:hover { background: #1e4bd8; }
         
-        .metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
         .metric-box { background: #2a2e39; padding: 15px; border-radius: 6px; text-align: center; }
         .metric-val { font-size: 20px; font-weight: bold; margin-top: 5px; color: #fff; }
         
@@ -34,7 +34,6 @@
 
         .insight-box { padding: 12px; border-radius: 4px; margin-bottom: 10px; font-size: 14px; line-height: 1.5; }
         .insight-hurst { background: rgba(41, 98, 255, 0.1); border-left: 4px solid var(--acc); }
-        .insight-kelly { background: rgba(8, 153, 129, 0.1); border-left: 4px solid var(--up); }
     </style>
 </head>
 <body>
@@ -58,7 +57,6 @@
                     <option value="BBAND">Bollinger Bands (Mean Reversion)</option>
                     <option value="RSI">Relative Strength Index (Momentum)</option>
                     <option value="ZSCORE">Z-Score Arbitrage (Statistical)</option>
-                    <option value="KALMAN">Kalman Filter (Noise Reduction)</option>
                 </select>
 
                 <label>Starting Capital</label>
@@ -108,19 +106,12 @@
                     <div style="font-size:12px; color:#8a93a6">Hurst Exponent</div>
                     <div class="metric-val" id="valHurst">---</div>
                 </div>
-                <div class="metric-box">
-                    <div style="font-size:12px; color:#8a93a6">Kelly Fraction</div>
-                    <div class="metric-val" id="valKelly">---</div>
-                </div>
             </div>
 
             <div class="card" id="insightsCard" style="display: none;">
                 <h3>🤖 Quantitative Insights</h3>
                 <div class="insight-box insight-hurst">
                     <strong style="color: #fff;">Regime Analysis:</strong> <span id="msgHurst" style="color: #8a93a6;">---</span>
-                </div>
-                <div class="insight-box insight-kelly">
-                    <strong style="color: #fff;">Risk Management:</strong> <span id="msgKelly" style="color: #8a93a6;">---</span>
                 </div>
             </div>
 
@@ -158,10 +149,6 @@
                 slowContainer.style.display = 'none';
             } else if (type === 'ZSCORE') {
                 fastLbl.innerText = 'Z-Score Window (Days)';
-                document.getElementById('fastSma').value = 20; 
-                slowContainer.style.display = 'none';
-            } else if (type === 'KALMAN') {
-                fastLbl.innerText = 'Process Noise Base (Default 20)';
                 document.getElementById('fastSma').value = 20; 
                 slowContainer.style.display = 'none';
             } else {
@@ -316,20 +303,9 @@
             document.getElementById('valTrades').innerText = result.total_trades;
 
             document.getElementById('valHurst').innerText = result.hurst_exponent ? result.hurst_exponent.toFixed(3) : "N/A";
-            document.getElementById('valKelly').innerText = result.kelly_fraction ? (result.kelly_fraction * 100).toFixed(2) + "%" : "N/A";
 
             document.getElementById('insightsCard').style.display = 'block';
             document.getElementById('msgHurst').innerText = result.hurst_msg || "Awaiting data...";
-            document.getElementById('msgKelly').innerText = result.kelly_msg || "Awaiting data...";
-
-            const kellyBox = document.querySelector('.insight-kelly');
-            if (result.kelly_fraction && result.kelly_fraction <= 0) {
-                kellyBox.style.borderLeftColor = 'var(--down)';
-                kellyBox.style.background = 'rgba(242, 54, 69, 0.1)';
-            } else {
-                kellyBox.style.borderLeftColor = 'var(--up)';
-                kellyBox.style.background = 'rgba(8, 153, 129, 0.1)';
-            }
 
             const logHtml = result.trades.map(t => {
                 const type = t.action.split(' ')[0]; 

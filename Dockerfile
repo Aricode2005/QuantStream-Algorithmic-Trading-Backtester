@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y g++ libstdc++6
 COPY . .
 
 # Compile the engine
-RUN g++ -O3 server.cpp -o server -lpthread
+RUN g++ -O3 -std=c++17 -Iinclude -I. server.cpp src/*.cpp -o server -lpthread
 
 # Expose port and run
 EXPOSE 10000
